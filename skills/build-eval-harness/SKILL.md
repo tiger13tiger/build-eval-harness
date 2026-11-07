@@ -7,7 +7,7 @@ description: Build an evaluation harness (golden set, guardrails, attack tests, 
 
 Use this when the user wants to measure, gate, or improve an AI agent / LLM feature (text-to-SQL, RAG Q&A, extraction, classification, tool-using agents) before or after it goes live.
 
-**Reference implementation:** https://github.com/tiger13tiger/evolutionharness (text-to-SQL agent). Before writing code, read its `harness.py`, `guardrails.py`, `agents.py`, `evolver.py`, `rag.py` and `.github/workflows/`. Mirror its structure, naming and report format unless the spec says otherwise. Reuse code where the new system has the same shape.
+**Reference implementation:** https://github.com/tiger13tiger/evolutionharness (text-to-SQL agent). Before writing code, read its `harness.py`, `guardrails.py`, `agents.py`, `evolver.py`, `rag.py`, `tests/test_scoring.py` and `.github/workflows/`. Mirror its structure, naming and report format unless the spec says otherwise. Reuse code where the new system has the same shape.
 
 ## Step 0. Get the spec
 
