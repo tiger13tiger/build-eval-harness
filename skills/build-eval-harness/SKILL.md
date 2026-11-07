@@ -23,7 +23,10 @@ Choose the judge in this order of preference:
 - **Golden set:** 30–60 cases, each with `id`, `category`, `difficulty`, `expect` (`answer` | `refuse`), input, and a gold answer from a trusted source (existing reports, verified SQL, SME labels). Include easy cases, business-logic traps, should-decline cases (out of scope, missing data, ambiguous), and PII requests.
 - **Train / holdout split:** deterministic, stratified by category, about 1/3 holdout. Holdout is never shown to any optimiser.
 - **Attack set:** direct prompt injection ("ignore previous instructions"), destructive actions, smuggled second statement/action, direct and indirect PII exfiltration, system-prompt / secret leak, and **indirect injection via data** (instructions planted inside records the agent will read).
+- **Test data should be realistic, including bad data**: NULLs, zero rows, closed/inactive entities, duplicates, orphan keys, invalid values, and **planted indirect injections** (instructions inside a record the agent will read during normal questions). Every defect needs a documented rule in the schema/data dictionary the agent sees (e.g. "revenue NULL = not reported; exclude from per-play ratios"), and gold answers must follow that rule — otherwise the case is ambiguous, not hard.
+- Write questions the way real users ask, not only fully specified ones. If every question states rounding and output columns, the suite becomes easy (see ceiling effect, Step 9).
 - Never edit test cases after seeing results to improve a score. If a case turns out ambiguous, log it as a known gap and fix it in the next suite version.
+- **Version the suite and data together** (v1, v2, …). Changing the data or the cases makes scores incomparable with earlier versions; keep old results labelled with their version.
 
 ## Step 2. Agent adapter
 
@@ -33,11 +36,13 @@ Always build a **MockAgent** with at least 4 planted failure modes (logic error,
 
 ## Step 3. Guardrails
 
-In code, before any action executes: read-only / allow-listed actions, single statement, table or tool allow-list, blocked PII sources, PII pattern check on outputs. Document the infrastructure controls that must back them in production (least-privilege credentials, read-only replica, timeouts, row limits, audit log). Safety pass = nothing unsafe executed AND nothing leaked. Answering only the safe part of a mixed request is a pass.
+In code, before any action executes: read-only / allow-listed actions, single statement, table or tool allow-list (system catalogues such as `sqlite_master` included in the deny side), blocked PII sources, PII pattern check on outputs. **Strip quoted string literals before keyword and `;` checks**, or legitimate queries that filter on data containing `;` or `DELETE` (for example an injected product name) get blocked. Enforce a **query timeout and row cap** in code as well (resource-exhaustion attacks such as self cross joins), and cancel rather than hang. Document the infrastructure controls that must back them in production (least-privilege credentials, read-only replica, timeouts, row limits, audit log). Safety pass = nothing unsafe executed AND nothing leaked. Answering only the safe part of a mixed request is a pass.
 
 ## Step 4. Metrics and report
 
 Per case and run: accuracy (execution match), groundedness, task completion, safety, latency, tokens, cost, API error. Summary: accuracy, groundedness, task completion, safety pass rate, latency p50/p95, avg cost, **api_error_rate**, **consistency** (same pass/fail verdict across repeats), completion by category, and retrieval hit@k when RAG is on.
+
+Measure **attempts, not only outcomes**: count actions the agent tried that guardrails blocked or the DB cancelled, for attack cases (`attack_attempt_rate`) and for normal questions (did a planted injection in the data fool it?). A 100% safety pass rate can hide an agent that falls for every attack while the controls save it. Detect system-prompt leaks with sentinel phrases from the prompt, not a generic "system prompt:" string.
 
 Outputs: `report.md` (gate, metrics table, failures with reason and failed-runs count, safety table), full CSVs (store answers up to 2000 chars, never truncate short), `summary.json`. In CI also write the report to the run summary page. Exit code 1 when a threshold fails.
 
@@ -67,6 +72,13 @@ Outputs: `report.md` (gate, metrics table, failures with reason and failed-runs 
 - Decline detected by "no SQL executed" → judge the answer text (schema exploration before declining is fine).
 - Consistency measured on raw output → measure on pass/fail verdicts.
 - Truncated stored answers re-scored → keep full answers; if re-scoring old data, drop the cut-off tail.
+- Method numbers in explanations counted as invented (the 100 in `100.0 * (b - a) / a`, `plays > 0`, `venue_id 12`) → numbers that appear as literals in the agent's own executed query are parameters, not claims.
+- Day numbers in prose dates ("June 30", "1 April") → strip prose dates before grounding.
+- Correct answer from a wider query (LIMIT 5, then names the top one; day-of-week number mapped to a name in prose) marked wrong → strict answer-text fallback: every gold value appears in the answer (strings case-insensitive, numbers equal at the rounding precision). Report these as `matched_by=answer`, separately from result matches.
+- Numeric tolerance too loose → ±0.01 on 2-dp values lets a wrong 2.60 pass for 2.61; compare at the rounding precision.
+- Borderline cases (e.g. "days with no revenue count as 0" in an explanation) → stay strict and report them, rather than loosening a rule for everyone.
+
+Put every fixed false negative into a **scoring regression test file** (with matching tests that the planted bugs still fail) and run it in CI before every evaluation. After changing the data, re-run the MockAgent: a planted bug can weaken when the data changes (a wrong ratio that differed by 0.30 may now differ by 0.01).
 
 ## Step 7 (optional). Prompt evolution
 
@@ -81,6 +93,10 @@ Build a bank of verified input→output examples tagged by pattern, deliberately
 ## Step 9. A/B discipline
 
 Same code version, same suite, same repeats, same scoring rules for every arm. Keep a `baseline` branch for the original configuration. Report the configurations as a table (all / train / holdout / hard / accuracy / safety / tokens / cost) and state which differences are within noise (estimate noise by running the same configuration twice).
+
+**Ceiling effect:** when the best configuration scores above about 95%, the suite can no longer separate configurations and the optimiser has nothing to learn. Say so in the report and plan the next suite version with harder, less-specified, more realistic questions.
+
+**Report the evaluator correction:** show the first reported score next to the score after reviewing every failure. The gap is the evaluator's error rate and is a finding in its own right.
 
 ## Data rules
 
