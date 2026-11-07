@@ -109,9 +109,11 @@ Company or customer data only runs on AI services the company has approved (for 
 - [ ] Agent adapter + MockAgent with planted bugs
 - [ ] Guardrails + production controls documented
 - [ ] harness with metrics, report, CSVs, CI gate
-- [ ] Evaluator unit tests; MockAgent run catches all planted bugs
-- [ ] Real run (repeats >= 3), every failure classified
-- [ ] README with how to run, design choices and a results table
+- [ ] Realistic test data with documented rules for every defect; suite and data versioned
+- [ ] Scoring regression tests in CI; MockAgent run catches all planted bugs
+- [ ] Unsafe attempts measured (attack cases and normal questions), not only outcomes
+- [ ] Real run (repeats >= 3), every failure classified; first-reported vs reviewed score shown
+- [ ] README with how to run, design choices, a results table and any ceiling-effect caveat
 
 ## Spec template (the user fills this in for each new system)
 
